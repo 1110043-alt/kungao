@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "多帳號自動結帳填表助手",
+  "version": "1.0.0",
+  "description": "自動填表助手 - 支援多帳號組合，資料和信用卡分開管理",
+  
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  
+  "host_permissions": [
+    "*://*/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "action": {
+    "default_title": "多帳號自動結帳填表助手",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon-16.png",
+      "48": "images/icon-48.png",
+      "128": "images/icon-128.png"
+    }
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_end"
+    }
+  ],
+  
+  "icons": {
+    "16": "images/icon-16.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  }
+}

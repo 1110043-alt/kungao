@@ -1,0 +1,104 @@
+台股預測儀表板 - Flask 伺服器自動重啟設置指南
+========================================
+
+【快速開始】
+有三種方式可以啟動 Flask 伺服器：
+
+1️⃣ 簡單方式 (推薦 - 立即使用)
+   文件: run_server.cmd
+   說明: 直接點擊此檔案，Flask 會啟動
+        如果停止會自動重啟 ✅
+
+2️⃣ 自動啟動方式 (推薦 - 開機自動運行)
+   文件: setup_auto_restart.ps1
+   說明: 右鍵 → 『以 PowerShell 執行』
+        設置後開機會自動啟動 Flask ✅
+        異常停止會自動重啟 ✅
+
+3️⃣ 手動方式
+   在 PowerShell/CMD 執行:
+   cd c:\Users\USER\Desktop\taiwan-stock-predictor
+   python simple_app.py
+
+
+【設置自動啟動】
+方法 A - 推薦 (完全自動)
+---------
+1. 右鍵 setup_auto_restart.ps1
+2. 選擇『以 PowerShell 執行』
+3. 按照提示操作
+4. 之後開機會自動啟動 Flask ✅
+
+方法 B - 手動設置
+---------
+1. Win + R → taskschd.msc
+2. 右側『建立工作...』
+3. 一般：名稱 = 「台股預測儀表板」
+4. 觸發器：新建 → 『在啟動時』
+5. 動作：新建 → 程式 = cmd.exe
+6. 引數 = /c "C:\Users\USER\Desktop\taiwan-stock-predictor\run_server.cmd"
+7. 工作目錄 = C:\Users\USER\Desktop\taiwan-stock-predictor
+8. 條件：勾選『執行最高權限』
+
+
+【常見問題】
+
+Q: Flask 為什麼會停止？
+A: 可能原因：
+   - 代碼語法錯誤
+   - 套件缺失
+   - 手動關閉了窗口
+   - 系統卡住
+   現在有自動重啟，不用擔心！
+
+Q: 怎樣停止 Flask？
+A: 直接關閉 Flask 窗口 (Ctrl+C)
+   會自動在 5 秒後重啟
+   要完全停止：在工作管理員停止任務
+
+Q: 可以改變重啟延遲時間嗎？
+A: 可以！編輯 run_server.cmd
+   找 timeout /t 5 改成你想要的秒數
+
+Q: Flask 已經在運行，怎樣重啟？
+A: 關閉 Flask 窗口，自動重啟
+   或手動執行 run_server.cmd
+
+
+【確認設置是否成功】
+1. 打開瀏覽器 → http://127.0.0.1:5000/
+   如果看到儀表板，Flask 正在運行 ✅
+
+2. 查看任務計劃
+   Win + R → taskschd.msc
+   找『台股預測儀表板-Flask伺服器』
+   應該是『啟用』狀態 ✅
+
+
+【故障排除】
+如果 run_server.cmd 沒反應：
+- 確認 Python 已安裝：在 cmd 執行 python --version
+- 確認虛擬環境已啟動：應該在 venv\Scripts\activate.ps1 之後
+- 確認在正確的目錄：c:\Users\USER\Desktop\taiwan-stock-predictor\
+
+如果 Flask 還是停止不動：
+- 檢查 simple_app.py 是否有錯誤
+- 查看 Flask 窗口是否有紅色錯誤訊息
+- 嘗試重新安裝依賴：pip install -r requirements.txt
+
+
+【技術說明】
+run_server.cmd 的工作原理：
+1. 啟動 Flask (python simple_app.py)
+2. 監控 Flask 進程
+3. 如果 Flask 停止，等待 5 秒
+4. 自動重新啟動 Flask
+5. 無限循環 (永不停止)
+
+setup_auto_restart.ps1 的工作原理：
+1. 在 Windows 任務計劃中註冊任務
+2. 系統啟動時自動執行 run_server.cmd
+3. 以最高權限運行，確保穩定性
+
+
+需要幫助？請聯絡開發者 😊

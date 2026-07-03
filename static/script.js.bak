@@ -1,0 +1,1220 @@
+let currentChart = null;
+let marketChart = null;
+let stocks = {};
+const prevPrices = {};
+const MARKET_REFRESH_MS = 10000;
+
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("=== DOMContentLoaded fired ===");
+    setupTabs();
+    setupSelectors();
+    setupActionButtons();
+    document.getElementById("refreshBtn")?.addEventListener("click", () => refreshDashboard(true));
+    
+    // Initialize: Load all data once
+    (async () => {
+        try {
+            console.log("Starting initial data load...");
+            const [allStocks, topStocks] = await Promise.all([
+                fetchJson("/api/all-stocks"),
+                fetchJson("/api/top-stocks"),
+            ]);
+            console.log("??Data fetched:", { allStocks: allStocks.length, topStocks: topStocks.length });
+            
+            cacheStocks(allStocks);
+            renderStockGrid(allStocks);
+            console.log("??Stock grid rendered");
+            
+            renderTopStocks(topStocks);
+            console.log("??Top stocks rendered");
+            
+            updateSummaryStats(allStocks, topStocks);
+            updateSelectors(allStocks);
+            setLastUpdate(allStocks);
+        } catch (error) {
+            console.error("Initial load failed:", error);
+        }
+    })();
+    
+    setupMarketRefresh();
+    updateMarketState();
+    setInterval(updateMarketState, 1000);
+});
+
+function isMarketHours() {
+    const now = new Date();
+    const taipei = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+    const day = taipei.getDay();
+    const hours = taipei.getHours();
+    const minutes = taipei.getMinutes();
+    const weekday = day >= 1 && day <= 5;
+    const trading = (hours > 9 || (hours === 9 && minutes >= 0)) && (hours < 13 || (hours === 13 && minutes <= 30));
+    return weekday && trading;
+}
+
+function formatTaipeiTime(date = new Date()) {
+    return date.toLocaleTimeString("zh-TW", {
+        timeZone: "Asia/Taipei",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+    });
+}
+
+function updateSummaryStats(allStocks, topStocks) {
+    let upCount = 0;
+    let downCount = 0;
+    
+    allStocks.forEach(stock => {
+        const pct = Number(stock.analysis?.day_change_pct || stock.day_change_pct || 0);
+        if (pct > 0) upCount++;
+        else if (pct < 0) downCount++;
+    });
+
+    let bestStockName = "--";
+    if (topStocks && topStocks.length > 0) {
+        const topStock = topStocks[0];
+        const pct = Number(topStock.day_change_pct || topStock.analysis?.day_change_pct || 0);
+        bestStockName = topStock.name + " (" + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%)";
+    }
+
+    const summaryStats = document.querySelector(".summary-stats");
+    if (summaryStats) {
+        const statDivs = summaryStats.querySelectorAll("div");
+        if (statDivs.length >= 3) {
+            // ?�新每�?div 中�? <strong> 標籤
+            const upStrong = statDivs[0].querySelector("strong");
+            const downStrong = statDivs[1].querySelector("strong");
+            const bestStrong = statDivs[2].querySelector("strong");
+            
+            if (upStrong) upStrong.textContent = upCount + " �?;
+            if (downStrong) downStrong.textContent = downCount + " �?;
+            if (bestStrong) bestStrong.textContent = bestStockName;
+        }
+    }
+
+    const summaryMain = document.querySelector(".summary-main strong");
+    if (summaryMain) {
+        const totalGain = upCount + downCount;
+        summaryMain.textContent = totalGain > 0 ? upCount + " 檔�?�? : "?��?�?;
+    }
+}
+
+async function fetchJson(url) {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+        throw new Error(url + " HTTP " + response.status);
+    }
+    return response.json();
+}
+
+function cacheStocks(data) {
+    data.forEach((stock) => {
+        stocks[stock.code] = stock;
+    });
+}
+
+function setLastUpdate(data) {
+    const el = document.getElementById("lastUpdate");
+    if (!el) return;
+    const latest = data.reduce((max, item) => Math.max(max, item.last_update || 0), 0);
+    const date = latest ? new Date(latest * 1000) : new Date();
+    el.dataset.fixed = "1";
+    el.textContent = "?�後更??" + formatTaipeiTime(date);
+}
+
+function setupTabs() {
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+        btn.addEventListener("click", () => showTab(btn.dataset.tab, btn));
+    });
+}
+
+function showTab(tabName, button) {
+    document.querySelectorAll(".tab-content").forEach((el) => {
+        el.classList.toggle("hidden", el.id !== tabName);
+        el.classList.toggle("active", el.id === tabName);
+    });
+    document.querySelectorAll(".tab-btn").forEach((el) => el.classList.remove("active"));
+    button?.classList.add("active");
+
+    if (tabName === "market") loadMarketChart();
+    if (tabName === "analysis") {
+        const selected = document.getElementById("detailStockSelect")?.value;
+        if (selected) loadDetailedAnalysis(selected);
+    }
+    if (tabName === "news") loadNews();
+}
+
+function setupSelectors() {
+    document.getElementById("detailStockSelect")?.addEventListener("change", (e) => {
+        if (e.target.value) loadDetailedAnalysis(e.target.value);
+    });
+    document.getElementById("analyzerStockSelect")?.addEventListener("change", () => {
+        if (typeof loadAnalyzerData === "function") loadAnalyzerData();
+    });
+}
+
+function updateStockPrices(data) {
+    data.forEach(stock => {
+        const card = document.querySelector('[data-code="' + stock.code + '"]');
+        if (!card) return;
+        
+        const analysis = stock.analysis || {};
+        const price = Number(analysis.current_price || 0);
+        const pct = Number(analysis.day_change_pct || 0);
+        
+        const divs = card.querySelectorAll('div');
+        // Find price and percentage text elements and update
+        const elements = card.querySelectorAll('[data-price], [data-pct]');
+        elements.forEach(el => {
+            if (el.dataset.price) el.textContent = "NT$" + price.toFixed(2);
+            if (el.dataset.pct) el.textContent = (pct >= 0 ? "??+" : "??") + pct.toFixed(2) + "%";
+        });
+    });
+}
+
+function renderStockGrid(data) {
+    console.log("renderStockGrid called with", data.length, "stocks");
+    const container = document.getElementById("stockGrid");
+    if (!container) return;
+    
+    if (!Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center;">載入�?..</div>';
+        return;
+    }
+
+    let html = "";
+    data.forEach(stock => {
+        const price = Number(stock.current_price || 0);
+        const pct = Number(stock.day_change_pct || 0);
+        const up = pct >= 0;
+        
+        html += '<div class="stock-card" data-code="' + stock.code + '" style="padding: 16px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(168, 85, 247, 0.06)); border: 1px solid #e9d5ff; border-radius: 8px; transition: all 0.2s; cursor: pointer;" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(124, 58, 237, 0.2)\';" onmouseout="this.style.boxShadow=\'none\';">';
+        html += '<div style="font-weight: 800; color: #2d1b69; margin-bottom: 8px;">' + stock.name + '</div>';
+        html += '<div style="font-size: 18px; font-weight: 800; color: #2d1b69; font-family: monospace; margin-bottom: 4px;" data-price>NT$' + price.toFixed(2) + '</div>';
+        html += '<div style="font-size: 14px; font-weight: 700; color: ' + (up ? '#ef4444' : '#10b981') + '; font-family: monospace;" data-pct>' + (up ? "??+" : "??") + pct.toFixed(2) + '%</div>';
+        html += '</div>';
+    });
+    
+    container.innerHTML = html;
+    
+    // ?��??�卡?�添?��??��?件監?�器
+    document.querySelectorAll('.stock-card').forEach(card => {
+        card.addEventListener('click', function() {
+            const code = this.getAttribute('data-code');
+            const selectEl = document.getElementById('detailStockSelect');
+            if (selectEl && code) {
+                selectEl.value = code;
+                const analysisBtn = document.querySelector('[data-tab="analysis"]');
+                showTab('analysis', analysisBtn);
+                setTimeout(() => loadDetailedAnalysis(code), 100);
+            }
+        });
+    });
+}
+
+function renderTopStocks(data) {
+    console.log("renderTopStocks called with:", data);
+    const container = document.getElementById("topStocksContainer");
+    console.log("topStocksContainer element:", container);
+    
+    if (!container) {
+        console.error("topStocksContainer not found!");
+        return;
+    }
+    
+    if (!Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">?��?沒�??��?榜�???/div>';
+        return;
+    }
+
+    const topThree = data.slice(0, 3);
+    if (topThree.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">?��?沒�??��?榜�???/div>';
+        return;
+    }
+
+    let htmlMarkup = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; width: 100%; box-sizing: border-box;">';
+    
+    const rankColors = ["#ffd700", "#c0c0c0", "#cd7f32"];
+    
+    topThree.forEach((stock, index) => {
+        const price = Number(stock.current_price || stock.analysis?.current_price || 0);
+        const pct = Number(stock.day_change_pct || stock.analysis?.day_change_pct || 0);
+        const up = pct >= 0;
+        const rankColor = rankColors[index] || "#ffffff";
+        
+        console.log("Rendering TOP " + (index + 1) + ":", stock.name, "Price:", price, "Change:", pct + "%");
+        
+        const onclick_handler = "document.getElementById('detailStockSelect').value='" + stock.code + "'; showTab('analysis', document.querySelector('[data-tab=\"analysis\"]')); loadDetailedAnalysis('" + stock.code + "');";
+        htmlMarkup += '<div style="padding: 16px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(168, 85, 247, 0.06)); border: 1px solid #e9d5ff; border-radius: 10px; transition: all 0.2s; cursor: default;" onclick="' + onclick_handler + '">';
+        htmlMarkup += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">';
+        htmlMarkup += '<strong style="font-size: 16px; font-weight: 800; color: #2d1b69;">' + stock.name + '</strong>';
+        htmlMarkup += '<span style="font-size: 12px; font-weight: 900; background: rgba(0,0,0,0.1); color: ' + rankColor + '; padding: 3px 8px; border-radius: 4px;">TOP ' + (index + 1) + '</span>';
+        htmlMarkup += '</div>';
+        htmlMarkup += '<div>';
+        htmlMarkup += '<div style="font-size: 20px; font-weight: 800; color: #2d1b69; font-family: monospace; margin-bottom: 4px;">NT$' + price.toFixed(2) + '</div>';
+        htmlMarkup += '<div style="font-size: 14px; font-weight: 700; color: ' + (up ? '#ef4444' : '#10b981') + '; font-family: monospace;">';
+        htmlMarkup += (up ? '??+' : '??') + pct.toFixed(2) + '%';
+        htmlMarkup += '</div>';
+        htmlMarkup += '</div>';
+        htmlMarkup += '</div>';
+    });
+    htmlMarkup += '</div>';
+    
+    console.log("Setting HTML with " + topThree.length + " cards");
+    container.innerHTML = htmlMarkup;
+}
+
+function setupActionButtons() {
+    document.getElementById("calculateBudgetDistribution")?.addEventListener("click", () => {
+        if (typeof calculateBudgetDistribution === "function") calculateBudgetDistribution();
+    });
+    document.getElementById("analyzeBtn")?.addEventListener("click", () => {
+        if (typeof analyzeTrading === "function") analyzeTrading();
+    });
+    document.getElementById("getSignalsBtn")?.addEventListener("click", () => {
+        if (typeof renderSignals === "function") renderSignals();
+    });
+    
+    // ?��?要�??��???
+    const newsBtn = document.querySelector('[data-tab="news"]');
+    if (newsBtn) {
+        newsBtn.addEventListener("click", () => loadNews());
+    }
+}
+
+function updateSelectors(data) {
+    ["detailStockSelect", "analyzerStockSelect"].forEach((id) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '<option value="">?��??�票</option>';
+        data.forEach((stock) => {
+            const option = document.createElement("option");
+            option.value = stock.code;
+            option.textContent = stock.name + " (" + stock.code + ")";
+            select.appendChild(option);
+        });
+        if (current) select.value = current;
+    });
+}
+
+function setupMarketRefresh() {
+    setInterval(() => {
+        if (isMarketHours()) {
+            refreshDashboard(false);
+        }
+    }, MARKET_REFRESH_MS);
+}
+
+function updateMarketState() {
+    const el = document.getElementById("marketState");
+    if (!el) return;
+    const hours = isMarketHours();
+    el.textContent = hours ? "?? ?�股?�盤�? : "?? ?��?";
+}
+
+function refreshDashboard(force) {
+    (async () => {
+        try {
+            const [allStocks, topStocks] = await Promise.all([
+                fetchJson("/api/all-stocks"),
+                fetchJson("/api/top-stocks"),
+            ]);
+            updateStockPrices(allStocks);
+            updateSummaryStats(allStocks, topStocks);
+            setLastUpdate(allStocks);
+        } catch (error) {
+            console.error("Dashboard refresh failed:", error);
+        }
+    })();
+}
+
+function loadDetailedAnalysis(code) {
+    const output = document.getElementById("analysisData");
+    const chartPanel = document.getElementById("analysisChartPanel");
+    const indicatorsDiv = document.getElementById("technicalIndicators");
+    
+    if (!output) return;
+    
+    const stock = stocks[code];
+    if (!stock) {
+        output.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">請選?�股�?/div>';
+        if (chartPanel) chartPanel.style.display = 'none';
+        if (indicatorsDiv) indicatorsDiv.style.display = 'none';
+        return;
+    }
+    
+    // ?�本信息?��?
+    const up = stock.day_change_pct >= 0;
+    let html = '<div style="padding: 20px;">';
+    html += '<h4 style="margin-bottom: 16px; color: #2d1b69; font-size: 20px;">' + stock.name + ' (' + stock.code + ') - ' + stock.category + '</h4>';
+    html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">';
+    
+    // ?�格?��?
+    html += '<div style="padding: 16px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(168, 85, 247, 0.08)); border: 1px solid #e9d5ff; border-radius: 8px;">';
+    html += '<div style="font-size: 12px; color: #666; margin-bottom: 8px;">?��??�格</div>';
+    html += '<div style="font-size: 24px; font-weight: 800; color: #2d1b69; margin-bottom: 8px;">NT$' + stock.current_price.toFixed(2) + '</div>';
+    html += '<div style="font-size: 14px; font-weight: 700; color: ' + (up ? '#ef4444' : '#10b981') + ';">';
+    html += (up ? '??+' : '??') + stock.day_change_pct.toFixed(2) + '% (' + (stock.day_change || 0).toFixed(2) + ' ??</div>';
+    html += '</div>';
+    
+    // 趨勢?��?
+    html += '<div style="padding: 16px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(168, 85, 247, 0.08)); border: 1px solid #e9d5ff; border-radius: 8px;">';
+    html += '<div style="font-size: 12px; color: #666; margin-bottom: 8px;">?��?趨勢</div>';
+    html += '<div style="font-size: 16px; font-weight: 800; color: #7c3aed; margin-bottom: 4px;">' + (stock.trend || '?��?�?) + '</div>';
+    html += '<div style="font-size: 12px; color: #888;">?��?術�??�判??/div>';
+    html += '</div>';
+    
+    // 波�??�卡??
+    html += '<div style="padding: 16px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(168, 85, 247, 0.08)); border: 1px solid #e9d5ff; border-radius: 8px;">';
+    html += '<div style="font-size: 12px; color: #666; margin-bottom: 8px;">波�???/div>';
+    html += '<div style="font-size: 20px; font-weight: 800; color: #2d1b69; margin-bottom: 4px;">' + (stock.volatility || 0).toFixed(2) + '%</div>';
+    html += '<div style="font-size: 12px; color: #888;">波�?越大越容?�漲�?/div>';
+    html += '</div>';
+    
+    html += '</div></div>';
+    output.innerHTML = html;
+    
+    // 顯示?�表
+    if (chartPanel) {
+        chartPanel.style.display = 'block';
+        loadAnalysisChart(code);
+    }
+    
+    // 顯示?�術�?標說??
+    if (indicatorsDiv) {
+        indicatorsDiv.style.display = 'block';
+        renderIndicatorExplanations(stock);
+    }
+    
+    // ?��? K 線�?�?
+    loadKlineChart(code);
+}
+
+function loadAnalysisChart(code) {
+    const ctx = document.getElementById("analysisChart");
+    if (!ctx) return;
+    
+    fetch('/api/stock-history/' + code, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                ctx.parentElement.innerHTML = '<div style="padding: 20px; color: red;">?��?載入?�表</div>';
+                return;
+            }
+            
+            const parent = ctx.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            ctx.width = parentRect.width;
+            ctx.height = 300;
+            
+            if (window.analysisChart && typeof window.analysisChart.destroy === 'function') {
+                window.analysisChart.destroy();
+            }
+            
+            const closes = data.closes || [];
+            const dates = data.dates || [];
+            
+            // 計�??�小�??�大值用?�Y�?
+            const minPrice = Math.min(...closes);
+            const maxPrice = Math.max(...closes);
+            const padding = (maxPrice - minPrice) * 0.1;
+            
+            window.analysisChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '?�價',
+                        data: closes,
+                        borderColor: '#7c3aed',
+                        backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#7c3aed',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#2d1b69', font: { size: 12 } }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#999', font: { size: 10 } },
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        },
+                        y: {
+                            min: minPrice - padding,
+                            max: maxPrice + padding,
+                            ticks: { color: '#999', font: { size: 10 }, callback: function(v) { return 'NT$' + v.toFixed(0); } },
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(err => {
+            console.error("Chart error:", err);
+            ctx.parentElement.innerHTML = '<div style="padding: 20px; color: red;">?�表載入失�?</div>';
+        });
+}
+
+function renderIndicatorExplanations(stock) {
+    const grid = document.getElementById("indicatorsGrid");
+    if (!grid) return;
+    
+    const indicators = [
+        {
+            name: "RSI (?��?強度?�數)",
+            value: (stock.rsi || 0).toFixed(2),
+            unit: "??,
+            explanation: "衡�??�票超買/超賣�?-30 ?�能低估�?0-100 ?�能高估",
+            assessment: stock.rsi ? (stock.rsi < 30 ? "?��? (買進�???" : stock.rsi > 70 ? "?��? (�?��訊�?)" : "?�中") : "N/A"
+        },
+        {
+            name: "MA20 (20?��?�?",
+            value: "NT$" + ((stock.ma20 || 0).toFixed(2)),
+            unit: "",
+            explanation: "�?0天�?平�??�價，�??�短?�走??,
+            assessment: stock.current_price > stock.ma20 ? "?�價高於?��? (強勢)" : "?�價低於?��? (弱勢)"
+        },
+        {
+            name: "MA50 (50?��?�?",
+            value: "NT$" + ((stock.ma50 || 0).toFixed(2)),
+            unit: "",
+            explanation: "�?0天�?平�??�價，�??�中?�走??,
+            assessment: stock.current_price > stock.ma50 ? "?�價高於?��? (強勢)" : "?�價低於?��? (弱勢)"
+        },
+        {
+            name: "MA200 (200?��?�?",
+            value: "NT$" + ((stock.ma200 || 0).toFixed(2)),
+            unit: "",
+            explanation: "�?00天�?平�??�價，�??�長?�走?��??��?趨勢",
+            assessment: stock.current_price > stock.ma200 ? "?�價高於?��? (?��??�漲)" : "?�價低於?��? (?��??��?)"
+        },
+        {
+            name: "?��?�?(Support)",
+            value: "NT$" + ((stock.support || 0).toFixed(2)),
+            unit: "",
+            explanation: "?�能?��?低�?，股票�??��??�此?��?",
+            assessment: Math.abs(stock.current_price - stock.support) / stock.support < 0.05 ? "?��??��?�? : "?�離?��?�?
+        },
+        {
+            name: "?��?�?(Resistance)",
+            value: "NT$" + ((stock.resistance || 0).toFixed(2)),
+            unit: "",
+            explanation: "?�能?��?高�?，股票�??��??�此?��?",
+            assessment: Math.abs(stock.resistance - stock.current_price) / stock.resistance < 0.05 ? "?��??��?�? : "?�離?��?�?
+        }
+    ];
+    
+    let html = '';
+    indicators.forEach(ind => {
+        html += '<div style="padding: 16px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(168, 85, 247, 0.06)); border: 1px solid #e9d5ff; border-radius: 8px;">';
+        html += '<div style="font-weight: 700; color: #2d1b69; margin-bottom: 8px; font-size: 14px;">' + ind.name + '</div>';
+        html += '<div style="font-size: 18px; font-weight: 800; color: #7c3aed; margin-bottom: 4px; font-family: monospace;">' + ind.value + '</div>';
+        html += '<div style="font-size: 12px; color: #888; margin-bottom: 8px; line-height: 1.5;">' + ind.explanation + '</div>';
+        html += '<div style="font-size: 12px; padding: 6px 8px; background: rgba(124, 58, 237, 0.1); border-radius: 4px; color: #7c3aed; font-weight: 600;">' + ind.assessment + '</div>';
+        html += '</div>';
+    });
+    
+    grid.innerHTML = html;
+}
+
+function loadStockChart(code) {
+    const output = document.getElementById("chartContainer");
+    const logs = window._stockChartLogs = window._stockChartLogs || [];
+    
+    if (!output) {
+        logs.push("chartContainer not found");
+        return;
+    }
+    
+    logs.push("loadStockChart called with code: " + code);
+    
+    const ctx = document.getElementById("trendChart");
+    if (!ctx) {
+        logs.push("trendChart canvas not found");
+        output.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">?�表?��??�找??/div>';
+        return;
+    }
+    
+    logs.push("Canvas found, fetching data...");
+    
+    fetch('/api/stock-history/' + code, { cache: 'no-store' })
+        .then(r => {
+            logs.push("API response received, status: " + r.status);
+            return r.json();
+        })
+        .then(data => {
+            logs.push("Data parsed: " + JSON.stringify({ error: data.error, hasClosesData: !!data.closes, datesLen: data.dates?.length }));
+            
+            if (data.error) {
+                logs.push("API error: " + data.error);
+                output.innerHTML = '<div style="padding: 20px; color: red;">' + data.error + '</div>';
+                return;
+            }
+            
+            logs.push("Setting canvas size...");
+            
+            // 设置canvas大�?
+            const parent = ctx.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            ctx.width = parentRect.width;
+            ctx.height = parentRect.height;
+            
+            logs.push("Canvas size: " + ctx.width + "x" + ctx.height);
+            
+            // ?��??��?�?
+            if (window.currentChart) {
+                logs.push("Destroying old currentChart");
+                window.currentChart.destroy();
+            }
+            
+            logs.push("Creating new Chart...");
+            
+            try {
+                window.currentChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates,
+                        datasets: [{
+                            label: data.name + ' ?�價',
+                            data: data.closes,
+                            borderColor: '#7c3aed',
+                            backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#7c3aed'
+                        }]
+                    },
+                    options: {
+                        responsive: false,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: true, labels: { color: '#2d1b69' } }
+                        },
+                        scales: {
+                            y: {
+                                ticks: { color: '#666' },
+                                grid: { color: '#f0f0f0' }
+                            },
+                            x: {
+                                ticks: { color: '#666' },
+                                grid: { color: '#f0f0f0' }
+                            }
+                        }
+                    }
+                });
+                logs.push("Chart created successfully! window.currentChart type: " + typeof window.currentChart);
+            } catch (chartErr) {
+                logs.push("Error creating chart: " + chartErr.message);
+            }
+        })
+        .catch(err => {
+            logs.push("Fetch error: " + err.message);
+            output.innerHTML = '<div style="padding: 20px; color: red;">載入失�?: ' + err + '</div>';
+        });
+}
+// 計�??��??�票?��?資�???(0-100)
+function calculateStockScore(stock) {
+    let score = 50; // ?��???
+    
+    // 1. RSI 評�?：�?�?(買�?) ?��?高�?
+    const rsi = stock.rsi || 50;
+    if (rsi < 30) {
+        score += 20; // 超賣，買?��???
+    } else if (rsi < 50) {
+        score += 10; // 較�?，適?�買??
+    } else if (rsi > 70) {
+        score -= 15; // 超買，賣?��???
+    } else {
+        score += 5; // 中�?
+    }
+    
+    // 2. ?��?趨勢評�?：股?��??��?條�?線為上�?趨勢
+    const price = stock.current_price || stock.price || 0;
+    let trendPoints = 0;
+    if (price > (stock.ma20 || 0)) trendPoints += 5;
+    if (price > (stock.ma50 || 0)) trendPoints += 5;
+    if (price > (stock.ma200 || 0)) trendPoints += 5;
+    score += trendPoints;
+    
+    // 3. ?��?位�??��??��??��?位表示�??��???
+    const support = stock.support || 0;
+    if (support > 0) {
+        const distToSupport = ((price - support) / support) * 100;
+        if (distToSupport < 5) {
+            score += 15; // ?��??��?位�??��?�?
+        } else if (distToSupport < 15) {
+            score += 8;
+        }
+    }
+    
+    // 4. 波�??��??��??�度波�??��?(1-3%)，�?高�???
+    const volatility = stock.volatility || 2;
+    if (volatility >= 1 && volatility <= 3) {
+        score += 10; // ?�度波�?
+    } else if (volatility > 4) {
+        score -= 10; // 波�??�大，風?��?
+    }
+    
+    // 5. 漲�?評�?：�??�漲幅正?��???
+    const dayChange = stock.day_change_pct || 0;
+    if (dayChange > 2) {
+        score += 5; // 強勢
+    } else if (dayChange < -2) {
+        score -= 5; // 弱勢
+    }
+    
+    return Math.max(0, Math.min(100, score));
+}
+
+// 計�??�票風險等�?
+function calculateRiskLevel(stock, score) {
+    const volatility = stock.volatility || 2;
+    const rsi = stock.rsi || 50;
+    
+    if (volatility > 4 || rsi > 75 || score < 40) {
+        return { level: '高風??, emoji: '?��', color: '#ef4444' };
+    } else if (volatility > 2.5 || rsi > 60 || score < 55) {
+        return { level: '中風??, emoji: '?��', color: '#f59e0b' };
+    } else {
+        return { level: '低風??, emoji: '?��', color: '#10b981' };
+    }
+}
+
+function calculateBudgetDistribution() {
+    const category = document.getElementById("budgetCategory")?.value || "";
+    const amount = parseFloat(document.getElementById("budgetInputAmount")?.value || 0);
+    const topN = parseInt(document.getElementById("budgetTopN")?.value || 5);
+    const output = document.getElementById("budgetAdviceResult");
+    
+    if (!output) return;
+    
+    if (amount < 1000) {
+        output.innerHTML = '<div style="padding: 20px; color: red;">請輸?��?少�???1,000 ??/div>';
+        return;
+    }
+    
+    // ?��?類別篩選?�票
+    let selectedStocks = [];
+    for (const code in stocks) {
+        const stock = stocks[code];
+        if (!category || stock.category === category) {
+            selectedStocks.push(stock);
+        }
+    }
+    
+    if (selectedStocks.length === 0) {
+        output.innerHTML = '<div style="padding: 20px; color: red;">該�??�無?�用?�票</div>';
+        return;
+    }
+    
+    // 計�?評�??�風?��??��?
+    selectedStocks = selectedStocks.map(stock => {
+        const score = calculateStockScore(stock);
+        const risk = calculateRiskLevel(stock, score);
+        return { ...stock, score, risk };
+    }).sort((a, b) => b.score - a.score);
+    
+    selectedStocks = selectedStocks.slice(0, topN);
+    
+    // ?��?評�??��??��?資�?
+    const totalScore = selectedStocks.reduce((sum, s) => sum + s.score, 0);
+    const allocations = selectedStocks.map(stock => {
+        const ratio = stock.score / totalScore; // 評�?佔�?
+        const allocation = Math.round(amount * ratio);
+        return { ...stock, allocation, ratio };
+    });
+    
+    // 調整?�後�?檔以確�?總�?�?��
+    let totalAlloc = allocations.reduce((sum, a) => sum + a.allocation, 0);
+    const remainder = amount - totalAlloc;
+    if (allocations.length > 0) {
+        allocations[allocations.length - 1].allocation += remainder;
+    }
+    
+    // ?��? HTML
+    let html = '<div style="padding: 20px; background: #f3e8ff; border-radius: 8px;">';
+    html += '<h4 style="margin-bottom: 16px; color: #2d1b69;">?? ?�能資�??��?建議</h4>';
+    
+    // 概�?信息
+    html += '<div style="margin-bottom: 20px; padding: 12px; background: white; border-radius: 6px;">';
+    html += '<div style="font-size: 14px; color: #666; margin-bottom: 6px;">?�入總�?: <strong style="color: #2d1b69; font-size: 16px;">NT$' + amount.toLocaleString() + '</strong></div>';
+    html += '<div style="font-size: 14px; color: #666;">?��?檔數: <strong style="color: #2d1b69;">' + allocations.length + ' �?/strong> | ?�於?�術�?標智?��?�?/div>';
+    html += '</div>';
+    
+    // ?��?表格
+    html += '<table style="width: 100%; border-collapse: collapse;">';
+    html += '<tr style="border-bottom: 2px solid #ddd; background: #f9f5ff;">';
+    html += '<th style="text-align: left; padding: 10px; color: #2d1b69;">?�票</th>';
+    html += '<th style="text-align: center; padding: 10px; color: #2d1b69;">評�?</th>';
+    html += '<th style="text-align: center; padding: 10px; color: #2d1b69;">風險</th>';
+    html += '<th style="text-align: right; padding: 10px; color: #2d1b69;">?�置?��?</th>';
+    html += '<th style="text-align: center; padding: 10px; color: #2d1b69;">比�?</th>';
+    html += '</tr>';
+    
+    allocations.forEach((stock, idx) => {
+        const pct = stock.day_change_pct || 0;
+        const ratio = (stock.ratio * 100).toFixed(1);
+        const riskColor = stock.risk.color;
+        
+        html += '<tr style="border-bottom: 1px solid #eee;">';
+        html += '<td style="padding: 10px;"><strong>' + stock.name + '</strong><br/><span style="font-size: 12px; color: #999;">' + stock.code + '</span></td>';
+        html += '<td style="padding: 10px; text-align: center;"><strong style="font-size: 16px; color: #7c3aed;">' + stock.score.toFixed(0) + '</strong></td>';
+        html += '<td style="padding: 10px; text-align: center;"><span style="color: ' + riskColor + ';">' + stock.risk.emoji + ' ' + stock.risk.level + '</span></td>';
+        html += '<td style="padding: 10px; text-align: right;"><strong>NT$' + stock.allocation.toLocaleString() + '</strong></td>';
+        html += '<td style="padding: 10px; text-align: center; color: #666;">' + ratio + '%</td>';
+        html += '</tr>';
+    });
+    
+    html += '</table>';
+    
+    // ?��??�由說�?
+    html += '<div style="margin-top: 16px; padding: 12px; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 4px;">';
+    html += '<div style="font-size: 13px; color: #92400e;"><strong>?? ?��??�輯�?/strong></div>';
+    html += '<ul style="margin: 8px 0; padding-left: 20px; font-size: 13px; color: #92400e;">';
+    html += '<li>?��? RSI?��?線、支?��??�波?��?等�?標�?算�?資�???/li>';
+    html += '<li>評�?越�??�股票�??��?多�???(強勢?��?)</li>';
+    html += '<li>?��?計�?風險等�?，幫?��?估頭寸�?�?/li>';
+    html += '</ul>';
+    html += '</div>';
+    
+    html += '</div>';
+    output.innerHTML = html;
+}
+
+function analyzeTrading() {
+    const selectEl = document.getElementById("analyzerStockSelect");
+    const costPriceInput = document.getElementById("costPrice");
+    const output = document.getElementById("tradingAnalysisResult");
+    
+    if (!output || !selectEl.value) {
+        if (output) output.innerHTML = '<div style="padding: 20px; color: red;">請�??��??�票</div>';
+        return;
+    }
+    
+    const code = selectEl.value;
+    const stock = stocks[code];
+    if (!stock) {
+        output.innerHTML = '<div style="padding: 20px; color: red;">?��??�股票數??/div>';
+        return;
+    }
+    
+    const costPrice = parseFloat(costPriceInput.value);
+    if (!costPrice || costPrice <= 0) {
+        output.innerHTML = '<div style="padding: 20px; color: red;">請輸?��??��??�本??/div>';
+        return;
+    }
+    
+    const currentPrice = stock.current_price || stock.price || 0;
+    const profit = currentPrice - costPrice;
+    const profitPct = (profit / costPrice) * 100;
+    const profitColor = profit >= 0 ? '#ef4444' : '#10b981';
+    const profitSymbol = profit >= 0 ? '?? : '??;
+    
+    // 計�?建議
+    let advice = '';
+    let adviceColor = '#666';
+    const rsi = stock.rsi || 50;
+    const price = stock.current_price || 0;
+    const ma20 = stock.ma20 || 0;
+    const ma50 = stock.ma50 || 0;
+    
+    if (profit >= 0) {
+        // 賺錢?��?
+        if (profitPct > 10) {
+            advice = '?? ?�利不�?，可?�慮?��??�利了�?';
+            adviceColor = '#ef4444';
+        } else if (profitPct > 5) {
+            advice = '?? ?��??��?漲�?，可觀察�?決�?';
+            adviceColor = '#f59e0b';
+        } else {
+            advice = '??小�??�利，繼續�??��??��??�碼';
+            adviceColor = '#10b981';
+        }
+    } else {
+        // ?��??��?
+        if (profitPct < -15) {
+            advice = '?��? ?��??��?，建議�?賠止??;
+            adviceColor = '#ef4444';
+        } else if (profitPct < -5) {
+            advice = '?��? ?�於?��?，�?待�?彈�??�慮止�?';
+            adviceColor = '#f59e0b';
+        } else {
+            advice = '?��? 小�??��?，可?��?等�??�攤�?;
+            adviceColor = '#f59e0b';
+        }
+    }
+    
+    // 添�??�術面建議
+    if (rsi > 70 && profit > 0) {
+        advice += ' (RSI 超買，考慮?�獲??';
+    } else if (rsi < 30 && profit < 0) {
+        advice += ' (RSI 超賣，可?�慮?�碼?��?)';
+    }
+    
+    // 構建 HTML
+    let html = '<div style="padding: 20px; background: #f3e8ff; border-radius: 8px;">';
+    html += '<h4 style="margin-bottom: 16px; color: #2d1b69;">買賣試�?結�?</h4>';
+    
+    // ?�本信息
+    html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">';
+    html += '<div style="padding: 12px; background: white; border-radius: 6px;">';
+    html += '<div style="font-size: 12px; color: #999; margin-bottom: 4px;">?�本??/div>';
+    html += '<div style="font-size: 20px; font-weight: bold; color: #2d1b69;">NT$' + costPrice.toFixed(2) + '</div>';
+    html += '</div>';
+    html += '<div style="padding: 12px; background: white; border-radius: 6px;">';
+    html += '<div style="font-size: 12px; color: #999; margin-bottom: 4px;">?�價</div>';
+    html += '<div style="font-size: 20px; font-weight: bold; color: #2d1b69;">NT$' + currentPrice.toFixed(2) + '</div>';
+    html += '</div>';
+    html += '</div>';
+    
+    // ?��?
+    html += '<div style="padding: 16px; background: white; border-radius: 6px; margin-bottom: 16px;">';
+    html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">';
+    html += '<div>';
+    html += '<div style="font-size: 12px; color: #999; margin-bottom: 4px;">?��??��?</div>';
+    html += '<div style="font-size: 24px; font-weight: bold; color: ' + profitColor + ';">' + profitSymbol + ' NT$' + Math.abs(profit).toFixed(2) + '</div>';
+    html += '</div>';
+    html += '<div>';
+    html += '<div style="font-size: 12px; color: #999; margin-bottom: 4px;">?��???/div>';
+    html += '<div style="font-size: 24px; font-weight: bold; color: ' + profitColor + ';">' + profitSymbol + ' ' + Math.abs(profitPct).toFixed(2) + '%</div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    
+    // 建議
+    html += '<div style="padding: 12px; background: ' + adviceColor + '15; border-left: 4px solid ' + adviceColor + '; border-radius: 4px;">';
+    html += '<div style="color: ' + adviceColor + '; font-weight: 500;">' + advice + '</div>';
+    html += '</div>';
+    
+    html += '</div>';
+    output.innerHTML = html;
+}
+
+function renderSignals() {
+    const selectEl = document.getElementById("analyzerStockSelect");
+    const output = document.getElementById("signalsResult");
+    
+    if (!output || !selectEl.value) {
+        if (output) output.innerHTML = '<div style="padding: 20px; color: red;">請�??��??�票</div>';
+        return;
+    }
+    
+    const code = selectEl.value;
+    const stock = stocks[code];
+    if (!stock) {
+        output.innerHTML = '<div style="padding: 20px; color: red;">?��??�股票數??/div>';
+        return;
+    }
+    
+    // ?��??�術信??
+    const rsi = stock.rsi || 50;
+    const price = stock.current_price || 0;
+    const ma20 = stock.ma20 || 0;
+    const ma50 = stock.ma50 || 0;
+    const ma200 = stock.ma200 || 0;
+    const support = stock.support || 0;
+    const resistance = stock.resistance || 0;
+    
+    let signals = [];
+    let signalScore = 0;
+    
+    // RSI 訊�?
+    if (rsi < 30) {
+        signals.push({ icon: '?��', text: 'RSI 超賣 (< 30)：強?�買?��???, weight: 3 });
+        signalScore += 3;
+    } else if (rsi < 50) {
+        signals.push({ icon: '?��', text: 'RSI 低�? (30-50)：溫?�買?��???, weight: 2 });
+        signalScore += 2;
+    } else if (rsi > 70) {
+        signals.push({ icon: '?��', text: 'RSI 超買 (> 70)：強?�賣?��???, weight: -3 });
+        signalScore -= 3;
+    } else if (rsi > 50) {
+        signals.push({ icon: '?��', text: 'RSI 高�? (50-70)：溫?�賣?��???, weight: -2 });
+        signalScore -= 2;
+    }
+    
+    // ?��?訊�?
+    if (price > ma20 && price > ma50) {
+        signals.push({ icon: '?��', text: '?�價??MA20/MA50 上方：短中�?上�?', weight: 2 });
+        signalScore += 2;
+    } else if (price < ma20 && price < ma50) {
+        signals.push({ icon: '?��', text: '?�價??MA20/MA50 下方：短中�?下�?', weight: -2 });
+        signalScore -= 2;
+    }
+    
+    if (ma200 > 0 && price > ma200) {
+        signals.push({ icon: '?��', text: '?�價??MA200 上方：長?�趨?��?�?, weight: 1 });
+        signalScore += 1;
+    } else if (ma200 > 0 && price < ma200) {
+        signals.push({ icon: '?��', text: '?�價??MA200 下方：長?�趨?��?�?, weight: -1 });
+        signalScore -= 1;
+    }
+    
+    // ?��??��?訊�?
+    if (support > 0) {
+        const distToSupport = ((price - support) / support) * 100;
+        if (distToSupport < 3) {
+            signals.push({ icon: '?��?', text: '?��??��?�?(' + distToSupport.toFixed(2) + '%)：�?彈�???, weight: 2 });
+            signalScore += 2;
+        }
+    }
+    
+    if (resistance > 0) {
+        const distToResistance = ((resistance - price) / price) * 100;
+        if (distToResistance < 3) {
+            signals.push({ icon: '?��?', text: '?��??��?�?(' + distToResistance.toFixed(2) + '%)：承壓可??, weight: -2 });
+            signalScore -= 2;
+        }
+    }
+    
+    // 波�??��???
+    const volatility = stock.volatility || 2;
+    if (volatility > 3) {
+        signals.push({ icon: '?��?', text: '波�??��?�?(' + volatility.toFixed(2) + '%)：風?��?�?, weight: 0 });
+    }
+    
+    // 綜�?建議
+    let overallSignal = '';
+    let overallColor = '#666';
+    if (signalScore >= 5) {
+        overallSignal = '強�?買�???';
+        overallColor = '#ef4444';
+    } else if (signalScore >= 2) {
+        overallSignal = '?��?買�???';
+        overallColor = '#10b981';
+    } else if (signalScore <= -5) {
+        overallSignal = '強�?�?�� ??';
+        overallColor = '#ef4444';
+    } else if (signalScore <= -2) {
+        overallSignal = '?��?�?�� ⬇�?';
+        overallColor = '#f59e0b';
+    } else {
+        overallSignal = '?�股觀???��?';
+        overallColor = '#f59e0b';
+    }
+    
+    // 構建 HTML
+    let html = '<div style="padding: 20px; background: #f3e8ff; border-radius: 8px;">';
+    html += '<h4 style="margin-bottom: 16px; color: #2d1b69;">?�術�??��???/h4>';
+    
+    // 綜�?評�?
+    html += '<div style="padding: 16px; background: ' + overallColor + '20; border-left: 4px solid ' + overallColor + '; border-radius: 6px; margin-bottom: 16px;">';
+    html += '<div style="font-size: 14px; color: #999; margin-bottom: 6px;">綜�?訊�?</div>';
+    html += '<div style="font-size: 24px; font-weight: bold; color: ' + overallColor + ';">' + overallSignal + '</div>';
+    html += '<div style="font-size: 12px; color: ' + overallColor + '; margin-top: 6px;">訊�?強度: ' + (signalScore >= 0 ? '+' : '') + signalScore + '</div>';
+    html += '</div>';
+    
+    // ?�別訊�?
+    html += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    signals.forEach(signal => {
+        html += '<div style="padding: 10px; background: white; border-radius: 6px; display: flex; align-items: center; gap: 12px; border-left: 3px solid #7c3aed;">';
+        html += '<span style="font-size: 18px;">' + signal.icon + '</span>';
+        html += '<span style="color: #333; font-size: 14px;">' + signal.text + '</span>';
+        html += '</div>';
+    });
+    html += '</div>';
+    
+    html += '</div>';
+    output.innerHTML = html;
+}
+
+// ?��??��??��?籤被點�??��??�試?��??�票?��?
+document.addEventListener("DOMContentLoaded", () => {
+    const analyzerTab = document.querySelector('[data-tab="analyzer"]');
+    if (analyzerTab) {
+        analyzerTab.addEventListener("click", () => {
+            const selectEl = document.getElementById("analyzerStockSelect");
+            if (selectEl && selectEl.value) {
+                const code = selectEl.value;
+                const stock = stocks[code];
+                if (stock) {
+                    const currentPrice = stock.current_price || stock.price || 0;
+                    const priceDisplay = document.getElementById("currentPriceDisplay");
+                    if (priceDisplay) {
+                        const change = stock.day_change_pct || 0;
+                        const changeColor = change >= 0 ? '#ef4444' : '#10b981';
+                        const changeSymbol = change >= 0 ? '?? : '??;
+                        priceDisplay.innerHTML = '<div style="padding: 16px; background: #f3e8ff; border-radius: 8px; text-align: center;"><div style="font-size: 32px; font-weight: bold; color: #2d1b69;">NT$' + currentPrice.toFixed(2) + '</div><div style="font-size: 16px; color: ' + changeColor + '; margin-top: 8px;">' + changeSymbol + ' ' + change.toFixed(2) + '%</div></div>';
+                    }
+                }
+            }
+        });
+    }
+});
+function loadMarketChart() {
+    const logs = window._marketChartLogs = [];
+    const output = document.getElementById("marketChart");
+    if (!output) {
+        logs.push("marketChart container not found");
+        return;
+    }
+    
+    logs.push("loadMarketChart started");
+    
+    fetch('/api/market-index', { cache: 'no-store' })
+        .then(r => {
+            logs.push("fetch response received");
+            return r.json();
+        })
+        .then(data => {
+            logs.push("API data parsed: " + JSON.stringify({ datesLen: data.dates?.length, closesLen: data.closes?.length }));
+            
+            if (data.error) {
+                logs.push("API returned error: " + data.error);
+                output.innerHTML = '<div style="padding: 20px; color: red;">' + data.error + '</div>';
+                return;
+            }
+            
+            const ctx = document.getElementById("marketChartCanvas");
+            logs.push("Canvas lookup: " + (ctx ? "found" : "not found"));
+            
+            if (!ctx) {
+                logs.push("Canvas element not found");
+                return;
+            }
+            
+            // 设置canvas大�?
+            const parent = ctx.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            ctx.width = parentRect.width;
+            ctx.height = parentRect.height;
+            logs.push("Canvas size set to: " + ctx.width + "x" + ctx.height);
+            
+            // ?��??��?�?
+            if (window.marketChart) {
+                logs.push("Destroying old chart, type: " + typeof window.marketChart);
+                try {
+                    window.marketChart.destroy();
+                    logs.push("Old chart destroyed successfully");
+                } catch (e) {
+                    logs.push("Error destroying old chart: " + e.message);
+                }
+            }
+            
+            logs.push("About to create new Chart, global marketChart before: " + typeof window.marketChart);
+            try {
+                window.marketChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates,
+                        datasets: [{
+                            label: '?�灣?��??�數',
+                            data: data.closes,
+                            borderColor: '#a855f7',
+
+// ?��??�能
+async function loadNews() {
+    console.log("Loading news...");
+    try {
+        const response = await fetch('/api/news', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Failed to load news');
+        
+        const newsData = await response.json();
+        const newsContainer = document.getElementById("newsContainer");
+        if (!newsContainer) {
+            console.error("News container not found");
+            return;
+        }
+        
+        let html = '<div style="display: grid; gap: 16px;">';
+        
+        newsData.forEach(item => {
+            const impactEmoji = item.impact === 'positive' ? '??' : (item.impact === 'negative' ? '??' : '?��?');
+            
+            html += '<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: white;">';
+            html += '<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">';
+            html += '<div>';
+            html += '<h3 style="margin: 0 0 4px 0; color: #1f2937;">' + item.title + '</h3>';
+            html += '<div style="font-size: 12px; color: #6b7280;">' + item.date + ' ??' + item.category + '</div>';
+            html += '</div>';
+            html += '<span style="font-size: 20px;">' + impactEmoji + '</span>';
+            html += '</div>';
+            html += '<p style="margin: 8px 0 0 0; color: #4b5563; font-size: 14px;">' + item.description + '</p>';
+            html += '</div>';
+        });
+        
+        html += '</div>';
+        newsContainer.innerHTML = html;
+        
+    } catch (error) {
+        console.error("Error loading news:", error);
+        const newsContainer = document.getElementById("newsContainer");
+        if (newsContainer) {
+            newsContainer.innerHTML = '<div style="color: red; padding: 20px;">?��??��??��?資�?</div>';
+        }
+    }
+}
+
+// K線�?表�???
+async function loadKlineChart(code) {
+    console.log("Loading K-line chart for:", code);
+    try {
+        const response = await fetch('/api/stock-history/' + code, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Failed to load stock history');
+        
+        const historyData = await response.json();
+        const klinePanel = document.getElementById("klineChartPanel");
+        if (!klinePanel) return;
+        
+        if (!historyData.dates || historyData.dates.length === 0) {
+            klinePanel.style.display = 'none';
+            return;
+        }
+        
+        klinePanel.style.display = 'block';
+        const canvas = document.getElementById("klineChart");
+        if (!canvas) return;
+        
+        if (window.klineChart && typeof window.klineChart.destroy === 'function') {
+            window.klineChart.destroy();
+        }
+        
+        window.klineChart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: historyData.dates,
+                datasets: [{
+                    label: '?�票?�格',
+                    data: historyData.closes,
+                    borderColor: '#7c3aed',
+                    backgroundColor: historyData.closes.map(function(c, i) {
+                        if (i === 0) return '#7c3aed';
+                        return c >= historyData.closes[i-1] ? '#ef4444' : '#10b981';
+                    }),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { beginAtZero: false, ticks: { color: '#6b7280' }, grid: { color: '#e5e7eb' } },
+                    x: { ticks: { color: '#6b7280', maxRotation: 45, minRotation: 0 }, grid: { color: '#e5e7eb' } }
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error("Error loading K-line:", error);
+    }
+}

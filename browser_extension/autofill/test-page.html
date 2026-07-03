@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自動填表測試頁面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .instructions {
+            background: #f0fdf4;
+            border-left: 4px solid #86efac;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #15803d;
+            line-height: 1.6;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            display: none;
+            font-weight: 600;
+        }
+        
+        .message.success {
+            background: #f0fdf4;
+            color: #15803d;
+            border: 1px solid #86efac;
+            display: block;
+        }
+        
+        .message.error {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎫 結帳表單測試頁面</h1>
+        <p class="subtitle">用於測試多帳號自動結帳填表擴充包</p>
+        
+        <div class="instructions">
+            <strong>使用說明:</strong><br>
+            1. 安裝瀏覽器擴充包<br>
+            2. 點擊擴充包圖標<br>
+            3. 選擇資料和卡號<br>
+            4. 點擊「自動填表」按鈕<br>
+            5. 下面的表單應該會自動填入
+        </div>
+        
+        <form id="testForm">
+            <!-- 個人資訊區 -->
+            <fieldset>
+                <legend style="font-size: 14px; font-weight: bold; margin-bottom: 15px;">👤 個人資訊</legend>
+                
+                <div class="form-group">
+                    <label for="fullName">姓名 *</label>
+                    <input type="text" id="fullName" name="fullName" placeholder="請輸入姓名">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="phone">手機號碼 *</label>
+                        <input type="tel" id="phone" name="phone" placeholder="09xxxxxxxx">
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email *</label>
+                        <input type="email" id="email" name="email" placeholder="example@gmail.com">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="idNumber">身分證號碼 *</label>
+                    <input type="text" id="idNumber" name="idNumber" placeholder="Axxxxxxxxx">
+                </div>
+            </fieldset>
+            
+            <!-- 信用卡資訊區 -->
+            <fieldset style="margin-top: 25px;">
+                <legend style="font-size: 14px; font-weight: bold; margin-bottom: 15px;">💳 信用卡資訊</legend>
+                
+                <div class="form-group">
+                    <label for="cardNumber">卡號 *</label>
+                    <input type="text" id="cardNumber" name="cardNumber" placeholder="1234567890123456" maxlength="19">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="expMonth">月份 (MM) *</label>
+                        <input type="text" id="expMonth" name="expMonth" placeholder="12" maxlength="2">
+                    </div>
+                    <div class="form-group">
+                        <label for="expYear">年份 (YYYY) *</label>
+                        <input type="text" id="expYear" name="expYear" placeholder="2025" maxlength="4">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="cvv">CVV / 安全碼 *</label>
+                    <input type="text" id="cvv" name="cvv" placeholder="123" maxlength="4">
+                </div>
+            </fieldset>
+            
+            <!-- 提交按鈕 -->
+            <button type="button" onclick="submitForm()">✅ 確認並提交</button>
+            
+            <!-- 消息顯示 -->
+            <div id="message" class="message"></div>
+        </form>
+    </div>
+    
+    <script>
+        function submitForm() {
+            const form = document.getElementById('testForm');
+            const inputs = form.querySelectorAll('input');
+            
+            let allFilled = true;
+            let message = '';
+            
+            inputs.forEach(input => {
+                if (!input.value) {
+                    allFilled = false;
+                    input.style.borderColor = '#ff6b6b';
+                } else {
+                    input.style.borderColor = '#86efac';
+                }
+            });
+            
+            const messageEl = document.getElementById('message');
+            
+            if (allFilled) {
+                message = `✅ 表單已填完！\n\n姓名: ${document.getElementById('fullName').value}\n手機: ${document.getElementById('phone').value}\n卡號: ****${document.getElementById('cardNumber').value.slice(-4)}`;
+                messageEl.textContent = message;
+                messageEl.className = 'message success';
+                messageEl.style.whiteSpace = 'pre-line';
+            } else {
+                messageEl.textContent = '⚠️ 請填入所有必填欄位';
+                messageEl.className = 'message error';
+            }
+        }
+        
+        // 監聽擴充包的自動填表完成事件
+        window.addEventListener('message', function(event) {
+            if (event.source !== window) return;
+            
+            if (event.data.type && event.data.type === 'FILL_COMPLETE') {
+                console.log('✅ 自動填表已完成');
+            }
+        });
+        
+        // 在頁面加載完成後通知擴充包
+        window.addEventListener('load', function() {
+            console.log('✅ 測試頁面已準備好自動填表');
+        });
+    </script>
+</body>
+</html>

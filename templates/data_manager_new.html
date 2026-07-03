@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 股票數據管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2em;
+        }
+        .stock-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stock-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        .stock-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+        .stock-code {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .stock-name {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            margin-bottom: 12px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            font-size: 0.9em;
+        }
+        .btn-save {
+            background: #28a745;
+            color: white;
+        }
+        .btn-save:hover {
+            background: #218838;
+        }
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-delete:hover {
+            background: #c82333;
+        }
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 股票數據管理</h1>
+        <div id="status"></div>
+        <div class="stock-grid" id="stockGrid"></div>
+    </div>
+
+    <script>
+        async function loadStocks() {
+            try {
+                const response = await fetch('/api/stocks');
+                const stocks = await response.json();
+                displayStocks(stocks);
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('載入失敗', 'error');
+            }
+        }
+
+        function displayStocks(stocks) {
+            const grid = document.getElementById('stockGrid');
+            grid.innerHTML = stocks.map(stock => `
+                <div class="stock-card" data-code="${stock.code}">
+                    <div class="stock-code">${stock.code}</div>
+                    <div class="stock-name">${stock.name}</div>
+                    <form onsubmit="saveStock(event, '${stock.code}')">
+                        <div class="form-group">
+                            <label>當前價格 (NT$)</label>
+                            <input type="number" step="0.01" name="current_price" 
+                                   value="${stock.current_price}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>漲跌幅 (%)</label>
+                            <input type="number" step="0.01" name="day_change_pct" 
+                                   value="${stock.day_change_pct}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>RSI</label>
+                            <input type="number" step="0.01" name="rsi" 
+                                   value="${stock.rsi}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>波動率 (%)</label>
+                            <input type="number" step="0.01" name="volatility" 
+                                   value="${stock.volatility}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>MA5</label>
+                            <input type="number" step="0.01" name="ma5" 
+                                   value="${stock.ma5}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>MA20</label>
+                            <input type="number" step="0.01" name="ma20" 
+                                   value="${stock.ma20}" required>
+                        </div>
+                        <div class="button-group">
+                            <button type="submit" class="btn-save">💾 保存</button>
+                            <button type="button" class="btn-delete" onclick="deleteStock('${stock.code}')">🗑️ 刪除</button>
+                        </div>
+                    </form>
+                </div>
+            `).join('');
+        }
+
+        async function saveStock(event, code) {
+            event.preventDefault();
+            const form = event.target;
+            const data = {
+                current_price: parseFloat(form.current_price.value),
+                day_change_pct: parseFloat(form.day_change_pct.value),
+                rsi: parseFloat(form.rsi.value),
+                volatility: parseFloat(form.volatility.value),
+                ma5: parseFloat(form.ma5.value),
+                ma20: parseFloat(form.ma20.value)
+            };
+
+            try {
+                const response = await fetch(`/api/stocks/${code}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    showStatus(`✅ ${code} 已保存`, 'success');
+                }
+            } catch (error) {
+                showStatus('保存失敗', 'error');
+            }
+        }
+
+        async function deleteStock(code) {
+            if (!confirm(`確認刪除 ${code}?`)) return;
+            try {
+                await fetch(`/api/stocks/${code}`, { method: 'DELETE' });
+                showStatus(`已刪除 ${code}`, 'success');
+                loadStocks();
+            } catch (error) {
+                showStatus('刪除失敗', 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            setTimeout(() => status.textContent = '', 3000);
+        }
+
+        loadStocks();
+    </script>
+</body>
+</html>

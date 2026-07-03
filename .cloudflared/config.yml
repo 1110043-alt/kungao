@@ -1,0 +1,11 @@
+tunnel: stock-predictor
+credentials-file: /Users/USER/AppData/Local/cloudflare-tunnel-credentials/stock-predictor.json
+
+ingress:
+  - hostname: stock.example.com
+    service: http://localhost:8080
+  - hostname: www.stock.example.com
+    service: http://localhost:8080
+  - hostname: stock-*
+    service: http://localhost:8080
+  - service: http://localhost:8080

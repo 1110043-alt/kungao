@@ -1,0 +1,504 @@
+﻿let currentChart = null;
+let marketChart = null;
+let stocks = {};
+const prevPrices = {};
+const MARKET_REFRESH_MS = 10000;
+
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("DOMContentLoaded fired");
+    setupTabs();
+    setupSelectors();
+    setupActionButtons();
+    document.getElementById("refreshBtn")?.addEventListener("click", () => refreshDashboard(true));
+    
+    // ??????摰??銝甈∴?銋??芣?唳摮?    (async () => {
+        try {
+            console.log("Starting initial data load...");
+            const [allStocks, topStocks] = await Promise.all([
+                fetchJson("/api/all-stocks"),
+                fetchJson("/api/top-stocks"),
+            ]);
+            console.log("Fetched data - allStocks:", allStocks.length, "topStocks:", topStocks.length);
+            cacheStocks(allStocks);
+            renderStockGrid(allStocks);  // ?????湔葡??            console.log("Stock grid rendered");
+            renderTopStocks(topStocks);  // ?????湔葡??            console.log("Top stocks rendered");
+            updateSummaryStats(allStocks, topStocks);
+            updateSelectors(allStocks);
+            setLastUpdate(allStocks);
+        } catch (error) {
+            console.error("Initial load failed:", error);
+        }
+    })();
+    
+    setupMarketRefresh();
+    updateMarketState();
+    setInterval(updateMarketState, 1000);
+});
+
+function isMarketHours() {
+    const now = new Date();
+    const taipei = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+    const day = taipei.getDay();
+    const hours = taipei.getHours();
+    const minutes = taipei.getMinutes();
+    const weekday = day >= 1 && day <= 5;
+    const trading = (hours > 9 || (hours === 9 && minutes >= 0)) && (hours < 13 || (hours === 13 && minutes <= 30));
+    return weekday && trading;
+}
+
+function formatTaipeiTime(date = new Date()) {
+    return date.toLocaleTimeString("zh-TW", {
+        timeZone: "Asia/Taipei",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
+function updateMarketState() {
+    const state = document.getElementById("marketState");
+    const lastUpdate = document.getElementById("lastUpdate");
+    if (!state) return;
+
+    if (isMarketHours()) {
+        state.textContent = "?支葉?郊銝哨?瘥?10 蝘?唬?甈?;
+        state.className = "market-state open";
+    } else {
+        state.textContent = "?漱??畾蛛?靽??餈?甈∟???;
+        state.className = "market-state closed";
+    }
+
+    if (lastUpdate && !lastUpdate.dataset.fixed) {
+        lastUpdate.textContent = `?啣??? ${formatTaipeiTime()}`;
+    }
+}
+
+function setupMarketRefresh() {
+    setInterval(() => {
+        if (isMarketHours()) {
+            refreshDashboard(false);
+        }
+    }, MARKET_REFRESH_MS);
+}
+
+async function refreshDashboard(force = false) {
+    try {
+        if (force || isMarketHours()) {
+            await fetch(`/api/refresh${force ? "?force=1" : ""}`);
+        }
+        const [allStocks, topStocks] = await Promise.all([
+            fetchJson("/api/all-stocks"),
+            fetchJson("/api/top-stocks"),
+        ]);
+        cacheStocks(allStocks);
+        updateStockPrices(allStocks);  // ???芣?啣?潭摮?銝??唳葡??        updateTopStocksPrices(topStocks);  // ???芣?唳?銵??詨?
+        updateSummaryStats(allStocks, topStocks); 
+        updateSelectors(allStocks);
+        setLastUpdate(allStocks);
+    } catch (error) {
+        console.error("Dashboard refresh failed:", error);
+    }
+}
+
+function updateSummaryStats(allStocks, topStocks) {\n    let upCount = 0;\n    let downCount = 0;\n    \n    allStocks.forEach(stock => {\n        const pct = Number(stock.analysis?.day_change_pct || stock.day_change_pct || 0);\n        if (pct > 0) upCount++;\n        else if (pct < 0) downCount++;\n    });\n\n    let bestStockName = \"--\";\n    if (topStocks && topStocks.length > 0) {\n        const topStock = topStocks[0];\n        const pct = Number(topStock.day_change_pct || topStock.analysis?.day_change_pct || 0);\n        bestStockName = `${topStock.name} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;\n    }\n\n    // 雿輻 querySelector ?蹂誨 XPath\n    const summaryStats = document.querySelector(\".summary-stats\");\n    if (summaryStats) {\n        const statDivs = summaryStats.querySelectorAll(\"div\");\n        if (statDivs.length >= 6) {\n            statDivs[1].textContent = `${upCount} 瑼;\n            statDivs[3].textContent = `${downCount} 瑼;\n            statDivs[5].textContent = bestStockName;\n        }\n    }\n\n    // ?湔 \"隞璁?\" ??\n    const summaryMain = document.querySelector(\".summary-main strong\");\n    if (summaryMain) {\n        const totalGain = upCount + downCount;\n        summaryMain.textContent = totalGain > 0 ? `${upCount} 瑼?瞍深 : \"?渡?銝苒";\n    }\n}"
+
+async function fetchJson(url) {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+        throw new Error(`${url} HTTP ${response.status}`);
+    }
+    return response.json();
+}
+
+function cacheStocks(data) {
+    data.forEach((stock) => {
+        stocks[stock.code] = stock;
+    });
+}
+
+function setLastUpdate(data) {
+    const el = document.getElementById("lastUpdate");
+    if (!el) return;
+    const latest = data.reduce((max, item) => Math.max(max, item.last_update || 0), 0);
+    const date = latest ? new Date(latest * 1000) : new Date();
+    el.dataset.fixed = "1";
+    el.textContent = `?敺??${formatTaipeiTime(date)}`;
+}
+
+function setupTabs() {
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+        btn.addEventListener("click", () => showTab(btn.dataset.tab, btn));
+    });
+}
+
+function showTab(tabName, button) {
+    document.querySelectorAll(".tab-content").forEach((el) => {
+        el.classList.toggle("hidden", el.id !== tabName);
+        el.classList.toggle("active", el.id === tabName);
+    });
+    document.querySelectorAll(".tab-btn").forEach((el) => el.classList.remove("active"));
+    button?.classList.add("active");
+
+    if (tabName === "market") loadMarketChart();
+    if (tabName === "chart") {
+        const selected = document.getElementById("chartStockSelect")?.value;
+        if (selected) loadStockChart(selected);
+    }
+}
+
+// ? ???詨?嚗釣?亙?璆剔?撠 CSS 璅??
+function renderStockGrid(data) {
+    const grid = document.getElementById("stockGrid");
+    if (!grid) return;
+    
+    grid.innerHTML = "";
+    
+    if (!document.getElementById("allStocksStyle")) {
+        const style = document.createElement("style");
+        style.id = "allStocksStyle";
+        style.textContent = `
+            .all-stocks-container {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                gap: 16px;
+                width: 100%;
+            }
+            
+            @media (max-width: 768px) {
+                .all-stocks-container {
+                    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                    gap: 12px;
+                }
+            }
+            
+            @media (max-width: 480px) {
+                .all-stocks-container {
+                    grid-template-columns: 1fr;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    const container = document.createElement("div");
+    container.className = "all-stocks-container";
+    
+    data.forEach(stock => {
+        container.appendChild(createStockCard(stock));
+    });
+    
+    grid.appendChild(container);
+}
+
+function createStockCard(stock) {
+    const analysis = stock.analysis || {};
+    const price = Number(analysis.current_price || stock.current_price || 0);
+    const previous = prevPrices[stock.code];
+    prevPrices[stock.code] = price;
+
+    const pct = Number(analysis.day_change_pct || stock.day_change_pct || 0);
+    const up = pct >= 0;
+
+    const card = document.createElement("article");
+    card.className = "stock-card";
+    card.dataset.code = stock.code;
+    card.style.cursor = "pointer";
+    card.style.padding = "14px";
+    card.style.borderRadius = "8px";
+    card.style.backgroundColor = "white";
+    card.style.border = "1px solid #e8d9ff";
+    card.style.transition = "all 0.2s";
+    card.style.display = "flex";
+    card.style.flexDirection = "column";
+    card.style.gap = "8px";
+    card.style.minHeight = "140px";
+    
+    card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+                <strong style="font-size: 16px; display: block; color: #1f1f3d;">${stock.name}</strong>
+                <div style="font-size: 12px; color: #6b7280; margin-top: 2px;">${stock.code}</div>
+            </div>
+            <span style="font-size: 11px; background: #f3e8ff; color: #7c3aed; padding: 4px 8px; border-radius: 4px; font-weight: 600; flex-shrink: 0;">${stock.category || "---"}</span>
+        </div>
+        
+        <div style="flex-grow: 1;">
+            <div style="font-size: 20px; font-weight: 800; color: #1f1f3d; font-family: monospace; margin-bottom: 4px;">NT$${price.toFixed(2)}</div>
+            <div style="font-size: 16px; font-weight: 700; color: ${up ? "#ef4444" : "#10b981"}; font-family: monospace;">
+                ${up ? "??+" : "??"}${pct.toFixed(2)}%
+            </div>
+        </div>
+        
+        <div style="border-top: 1px solid #e8d9ff; padding-top: 8px; font-size: 12px; color: #6b7280;">
+            <span>${analysis.trend || "閫撖葉"}</span> ??<span>RSI ${Number(analysis.rsi || 0).toFixed(1)}</span>
+        </div>
+    `;
+    
+    card.addEventListener("mouseenter", () => {
+        card.style.transform = "translateY(-2px)";
+        card.style.boxShadow = "0 8px 16px rgba(124, 58, 237, 0.12)";
+    });
+    
+    card.addEventListener("mouseleave", () => {
+        card.style.transform = "none";
+        card.style.boxShadow = "none";
+    });
+    
+    card.addEventListener("click", () => {
+        const select = document.getElementById("detailStockSelect");
+        if (select) select.value = stock.code;
+        showTab("analysis", document.querySelector('[data-tab="analysis"]'));
+        loadDetailedAnalysis(stock.code);
+    });
+    
+    return card;
+}
+
+// ?? ?平???蝯垢璈???蝣箔?撘瑕?游?敹怠?銝行憭改?
+function renderTopStocks(data) {
+    console.log("renderTopStocks called with:", data);
+    const container = document.getElementById("topStocksContainer");
+    console.log("Container element:", container);
+    if (!container) return;
+    
+    if (!Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">?桀?瘝???璁???/div>';
+        return;
+    }
+
+    const topThree = data.slice(0, 3);
+    let htmlMarkup = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; width: 100%; box-sizing: border-box;">`;
+    
+    const rankColors = ["#ffd700", "#c0c0c0", "#cd7f32"];
+    
+    topThree.forEach((stock, index) => {
+        const price = Number(stock.current_price || 0);
+        const pct = Number(stock.day_change_pct || 0);
+        const up = pct >= 0;
+        const rankColor = rankColors[index] || "#ffffff";
+        
+        console.log(`Rendering TOP ${index + 1}:`, stock.name, price, pct);
+        
+        htmlMarkup += `
+            <div style="
+                padding: 16px;
+                background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(168, 85, 247, 0.06));
+                border: 1px solid #e9d5ff;
+                border-radius: 10px;
+                cursor: pointer;
+                transition: all 0.2s;
+            " onclick="document.getElementById('detailStockSelect').value='${stock.code}'; showTab('analysis', document.querySelector('[data-tab=\\'analysis\\']')); loadDetailedAnalysis('${stock.code}');">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <strong style="font-size: 16px; font-weight: 800; color: #2d1b69;">${stock.name}</strong>
+                    <span style="font-size: 12px; font-weight: 900; background: rgba(0,0,0,0.1); color: ${rankColor}; padding: 3px 8px; border-radius: 4px;">TOP ${index + 1}</span>
+                </div>
+                <div>
+                    <div style="font-size: 20px; font-weight: 800; color: #2d1b69; font-family: monospace; margin-bottom: 4px;">NT$${price.toFixed(2)}</div>
+                    <div style="font-size: 14px; font-weight: 700; color: ${up ? "#ef4444" : "#10b981"}; font-family: monospace;">
+                        ${up ? "??+" : "??"}${pct.toFixed(2)}%
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    htmlMarkup += `</div>`;
+    console.log("Final HTML:", htmlMarkup);
+    container.innerHTML = htmlMarkup;
+}
+
+function chartConfig(label, labels, prices, color) {
+    return {
+        type: "line",
+        data: {
+            labels,
+            datasets: [{
+                label,
+                data: prices,
+                borderColor: color,
+                backgroundColor: `${color}12`,
+                borderWidth: 2,
+                tension: 0.2,
+                fill: true,
+                pointRadius: 1,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { grid: { display: false }, ticks: { color: "#333" } },
+                y: { grid: { color: "rgba(0, 0, 0, 0.05)" }, ticks: { color: "#333" } }
+            },
+            plugins: { legend: { labels: { color: "#333" } } }
+        }
+    };
+}
+
+async function loadStockChart(stockCode) {
+    const container = document.getElementById("chartContainer");
+    if (!container) return;
+    const data = await fetchJson(`/api/stock/${stockCode}/chart`);
+    container.innerHTML = '<canvas id="trendChart"></canvas>';
+    const ctx = document.getElementById("trendChart");
+    if (currentChart) currentChart.destroy();
+    const start = data.prices[0] || 0;
+    const end = data.prices[data.prices.length - 1] || 0;
+    const color = end >= start ? "#dc2626" : "#10b981";
+    currentChart = new Chart(ctx, chartConfig(`${stockCode} 頞典`, data.labels, data.prices, color));
+}
+
+async function loadMarketChart() {
+    const ctx = document.getElementById("marketChartCanvas");
+    if (!ctx) return;
+    const data = await fetchJson("/api/market-chart?period=daily");
+    if (marketChart) marketChart.destroy();
+    const start = data.prices[0] || 0;
+    const end = data.prices[data.prices.length - 1] || 0;
+    const color = end >= start ? "#dc2626" : "#10b981";
+    marketChart = new Chart(ctx, chartConfig("憭抒?", data.labels, data.prices, color));
+}
+
+async function loadDetailedAnalysis(stockCode) {
+    const container = document.getElementById("analysisData");
+    if (!container) return;
+    const analysis = await fetchJson(`/api/stock/${stockCode}`);
+    const score = calculateTechnicalScore(analysis);
+    const pct = Number(analysis.day_change_pct || 0);
+    container.innerHTML = `
+        <div class="metric-grid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+            ${metric("??啁??, `NT$${Number(analysis.current_price || 0).toFixed(2)}`)}
+            ${metric("隞瞍脰?", `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`, pct >= 0 ? "up" : "down")}
+            ${metric("憭征閰?", `${score} / 100`)}
+            ${metric("?詨?撱箄降", score >= 65 ? "撘瑕??" : score <= 45 ? "靽?閫?? : "?????)}
+        </div>
+    `;
+}
+
+function metric(label, value, tone = "") {
+    const color = tone === "up" ? "#d32f2f" : tone === "down" ? "#388e3c" : "inherit";
+    return `
+        <div class="metric-card" style="padding:12px; border-radius:6px; border:1px solid rgba(0,0,0,0.08);">
+            <div style="font-size:12px; opacity: 0.7; margin-bottom:4px;">${label}</div>
+            <div style="font-size:18px; font-weight:bold; color:${color};">${value}</div>
+        </div>
+    `;
+}
+
+function calculateTechnicalScore(analysis) {
+    let score = 50;
+    const price = Number(analysis.current_price || 0);
+    const ma5 = Number(analysis.ma5 || price);
+    const ma20 = Number(analysis.ma20 || price);
+    const rsi = Number(analysis.rsi || 50);
+    if (ma5 > ma20) score += 20; else score -= 15;
+    if (rsi < 30) score += 15; else if (rsi > 70) score -= 15;
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function setupSelectors() {
+    document.getElementById("chartStockSelect")?.addEventListener("change", (e) => {
+        if (e.target.value) loadStockChart(e.target.value);
+    });
+    document.getElementById("detailStockSelect")?.addEventListener("change", (e) => {
+        if (e.target.value) loadDetailedAnalysis(e.target.value);
+    });
+    document.getElementById("analyzerStockSelect")?.addEventListener("change", () => {
+        if (typeof loadAnalyzerData === "function") loadAnalyzerData();
+    });
+}
+
+// ???芣?啣?潭摮?銝??唳葡????function updateStockPrices(data) {
+    data.forEach(stock => {
+        const card = document.querySelector(`[data-code="${stock.code}"]`);
+        if (!card) return;
+        
+        const analysis = stock.analysis || {};
+        const price = Number(analysis.current_price || 0);
+        const pct = Number(analysis.day_change_pct || 0);
+        
+        // ?脣???ivs銝行?啣?潘??蝚砌??iv?洵銝?iv嚗?        const divs = card.querySelectorAll('div');
+        if (divs.length >= 2) {
+            // ?曉?寞?撞頝??捆?剁??虜?舐洵鈭?div銝剔?flex摰孵嚗?            const priceContainer = divs[divs.length - 2];  // ?蝚砌??iv
+            if (priceContainer) {
+                const innerDivs = priceContainer.querySelectorAll(':scope > div');
+                if (innerDivs.length >= 2) {
+                    // ?湔?寞
+                    const priceDiv = innerDivs[0];
+                    const newPrice = `NT$${price.toFixed(2)}`;
+                    if (priceDiv.textContent !== newPrice) {
+                        priceDiv.textContent = newPrice;
+                    }
+                    
+                    // ?湔瞍脰?撟?                    const changeDiv = innerDivs[1];
+                    const up = pct >= 0;
+                    const newChange = `${up ? "??+" : "??"}${pct.toFixed(2)}%`;
+                    if (changeDiv.textContent !== newChange) {
+                        changeDiv.textContent = newChange;
+                        changeDiv.style.color = up ? "#dc2626" : "#10b981";
+                    }
+                }
+            }
+        }
+        
+        prevPrices[stock.code] = price;
+    });
+}
+
+// ???芣?唳?銵??摮?function updateTopStocksPrices(data) {
+    if (!Array.isArray(data) || data.length === 0) return;
+    const topThree = data.slice(0, 3);
+    const topCards = document.querySelectorAll('.premium-business-top-card');
+    
+    topCards.forEach((card, idx) => {
+        if (idx >= topThree.length) return;
+        const stock = topThree[idx];
+        
+        // ?湔?寞
+        const priceSpan = card.querySelector('span[style*="font-size: 29px"]');
+        if (priceSpan) {
+            const newPrice = `NT$${Number(stock.current_price || 0).toFixed(2)}`;
+            if (priceSpan.textContent !== newPrice) {
+                priceSpan.textContent = newPrice;
+            }
+        }
+        
+        // ?湔瞍脰?撟?        const pct = Number(stock.day_change_pct || 0);
+        const changeSpan = card.querySelector('span[style*="font-size: 20px"]');
+        if (changeSpan) {
+            const up = pct >= 0;
+            const newChange = `${up ? "??+" : "??"}${pct.toFixed(2)}%`;
+            if (changeSpan.textContent !== newChange) {
+                changeSpan.textContent = newChange;
+                changeSpan.style.color = up ? "#dc2626" : "#10b981";
+            }
+        }
+    });
+}
+
+function setupActionButtons() {
+    document.getElementById("calculateBudgetDistribution")?.addEventListener("click", () => {
+        if (typeof calculateBudgetDistribution === "function") calculateBudgetDistribution();
+    });
+    document.getElementById("analyzeBtn")?.addEventListener("click", () => {
+        if (typeof analyzeTrading === "function") analyzeTrading();
+    });
+    document.getElementById("getSignalsBtn")?.addEventListener("click", () => {
+        if (typeof renderSignals === "function") renderSignals();
+    });
+}
+
+function updateSelectors(data) {
+    ["detailStockSelect", "chartStockSelect", "analyzerStockSelect"].forEach((id) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '<option value="">?豢??∠巨</option>';
+        data.forEach((stock) => {
+            const option = document.createElement("option");
+            option.value = stock.code;
+            option.textContent = `${stock.name} (${stock.code})`;
+            select.appendChild(option);
+        });
+        if (current) select.value = current;
+    });
+}

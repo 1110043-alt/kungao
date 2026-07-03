@@ -1,0 +1,69 @@
+# 🐳 Docker 忽略文件
+# 防止不必要的文件進入容器
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虛擬環境
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 測試和覆蓋
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# 本地配置
+.env
+.env.local
+*.pid
+
+# 其他
+*.log
+*.tmp
+*.bak
+node_modules/
+.npm

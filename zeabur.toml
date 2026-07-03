@@ -1,0 +1,8 @@
+[build]
+buildType = "python"
+
+[presets]
+runtime = "python3.11"
+
+[service]
+name = "taiwan-stock-predictor"

@@ -1,0 +1,15 @@
+# 服務配置
+# 支援: Zeabur, Railway, Render, Fly.io
+# 將此檔案放在專案根目錄
+
+# Zeabur 專用配置 (railway.toml)
+[build]
+builder = "dockerfile"
+dockerfile = "Dockerfile.monitor"
+
+[deploy]
+startCommand = "python discord_bot_monitor.py"
+
+[[services]]
+name = "discord-bot-monitor"
+buildCommand = "pip install -r requirements.txt"

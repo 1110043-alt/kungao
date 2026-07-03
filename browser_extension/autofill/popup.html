@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多帳號自動結帳填表助手</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 標題 -->
+        <div class="header">
+            <h1>📋 自動填表助手</h1>
+            <p>資料和信用卡分開管理</p>
+        </div>
+
+        <!-- 主要功能區 -->
+        <div class="main-content">
+            <!-- 資料選擇 -->
+            <div class="section">
+                <label for="profile-select">👤 個人資訊:</label>
+                <select id="profile-select">
+                    <option value="">-- 選擇個人資訊 --</option>
+                </select>
+                <button id="load-data-btn" class="btn-secondary">載入</button>
+            </div>
+
+            <!-- 卡號選擇 -->
+            <div class="section">
+                <label for="card-select">💳 信用卡:</label>
+                <select id="card-select">
+                    <option value="">-- 選擇信用卡 --</option>
+                </select>
+                <button id="load-card-btn" class="btn-secondary">載入</button>
+            </div>
+
+            <!-- 快速組合 -->
+            <div class="section">
+                <h3>🔄 快速組合</h3>
+                <div class="combo-buttons">
+                    <button id="combo-ab" class="btn-combo">A+A</button>
+                    <button id="combo-ac" class="btn-combo">A+B</button>
+                    <button id="combo-ba" class="btn-combo">B+A</button>
+                    <button id="combo-bb" class="btn-combo">B+B</button>
+                    <button id="combo-ca" class="btn-combo">C+A</button>
+                    <button id="combo-cb" class="btn-combo">C+B</button>
+                </div>
+            </div>
+
+            <!-- 狀態顯示 -->
+            <div class="section">
+                <h3>✅ 當前狀態</h3>
+                <div id="status" class="status-box">
+                    <p>未載入任何資料</p>
+                </div>
+            </div>
+
+            <!-- 主操作按鈕 -->
+            <div class="section">
+                <button id="auto-fill-btn" class="btn-primary" disabled>🤖 自動填表</button>
+            </div>
+        </div>
+
+        <!-- 標籤頁選擇 -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="main">主要</button>
+            <button class="tab-btn" data-tab="manage">管理資料</button>
+            <button class="tab-btn" data-tab="settings">設定</button>
+        </div>
+
+        <!-- 管理標籤頁 -->
+        <div id="manage-tab" class="tab-content" style="display: none;">
+            <h3>管理個人資訊和信用卡</h3>
+            
+            <div class="section">
+                <h4>新增個人資訊</h4>
+                <input type="text" id="new-profile-id" placeholder="資料 ID (如: D)" maxlength="1">
+                <input type="text" id="new-profile-name" placeholder="姓名">
+                <input type="tel" id="new-profile-phone" placeholder="手機">
+                <input type="text" id="new-profile-id-number" placeholder="身分證字號">
+                <input type="email" id="new-profile-email" placeholder="Email">
+                <button id="add-profile-btn" class="btn-secondary">新增資料</button>
+            </div>
+
+            <div class="section">
+                <h4>新增信用卡</h4>
+                <input type="text" id="new-card-id" placeholder="卡號 ID (如: D)" maxlength="1">
+                <input type="text" id="new-card-number" placeholder="卡號">
+                <input type="text" id="new-card-month" placeholder="月份 (MM)" maxlength="2">
+                <input type="text" id="new-card-year" placeholder="年份 (YYYY)" maxlength="4">
+                <input type="text" id="new-card-cvv" placeholder="CVV" maxlength="4">
+                <button id="add-card-btn" class="btn-secondary">新增卡號</button>
+            </div>
+
+            <div class="section">
+                <h4>刪除資料</h4>
+                <select id="delete-profile-select">
+                    <option value="">-- 選擇要刪除的資料 --</option>
+                </select>
+                <button id="delete-profile-btn" class="btn-danger">刪除資料</button>
+            </div>
+
+            <div class="section">
+                <h4>刪除信用卡</h4>
+                <select id="delete-card-select">
+                    <option value="">-- 選擇要刪除的卡號 --</option>
+                </select>
+                <button id="delete-card-btn" class="btn-danger">刪除卡號</button>
+            </div>
+        </div>
+
+        <!-- 設定標籤頁 -->
+        <div id="settings-tab" class="tab-content" style="display: none;">
+            <h3>擴充包設定</h3>
+            
+            <div class="section">
+                <h4>資訊</h4>
+                <p><strong>版本:</strong> 1.0.0</p>
+                <p><strong>作者:</strong> 多帳號自動結帳填表助手</p>
+            </div>
+
+            <div class="section">
+                <h4>危險操作</h4>
+                <button id="reset-all-btn" class="btn-danger">重置所有資料</button>
+                <p class="warning-text">⚠️ 此操作將恢復所有預設資料</p>
+            </div>
+
+            <div class="section">
+                <h4>使用說明</h4>
+                <ol>
+                    <li>選擇個人資訊和信用卡</li>
+                    <li>點擊「自動填表」或使用快速組合</li>
+                    <li>確認填入的資料無誤</li>
+                    <li>手動確認並提交表單</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- 消息提示 -->
+        <div id="message" class="message-box" style="display: none;"></div>
+    </div>
+
+    <script src="data-manager.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>
