@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台股即時預測儀表板</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 頭部 -->
+        <header class="header">
+            <div class="header-left">
+                <h1>📈 台股即時預測儀表板</h1>
+                <span class="market-status" id="marketStatus">
+                    <span class="status-indicator"></span>
+                    盤中
+                </span>
+            </div>
+            <div class="header-right">
+                <button class="refresh-btn" onclick="refreshData()">🔄 重新整理</button>
+            </div>
+        </header>
+
+        <!-- 標籤頁 -->
+        <nav class="tabs">
+            <button class="tab-btn active" onclick="switchTab('overview')">📊 總覽</button>
+            <button class="tab-btn" onclick="switchTab('market')">📈 大盤</button>
+            <button class="tab-btn" onclick="switchTab('stocks')">💹 股票細節</button>
+            <button class="tab-btn" onclick="switchTab('prediction')">🔮 預測分析</button>
+            <button class="tab-btn" onclick="switchTab('news')">📰 新聞要事</button>
+        </nav>
+
+        <!-- 內容區域 -->
+        <main class="content">
+            <!-- 1. 總覽分頁 -->
+            <section id="overview" class="tab-content active">
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <h3>今日概覽</h3>
+                        <div class="summary-stats">
+                            <div class="stat">
+                                <span class="stat-label">上漲家數</span>
+                                <span class="stat-value up" id="upCount">-</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">下跌家數</span>
+                                <span class="stat-value down" id="downCount">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="summary-card">
+                        <h3>領漲股票</h3>
+                        <div id="topStocksContainer" class="top-stocks">
+                            <p class="loading">載入中...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. 大盤分頁 -->
+            <section id="market" class="tab-content">
+                <h2>大盤走勢</h2>
+                <div class="chart-container">
+                    <canvas id="marketChart"></canvas>
+                </div>
+                <p class="info-text">台灣大盤走勢一覽</p>
+            </section>
+
+            <!-- 3. 股票細節分頁 -->
+            <section id="stocks" class="tab-content">
+                <h2>股票清單</h2>
+                <div class="filters">
+                    <input type="text" id="searchInput" placeholder="搜尋股票代碼或名稱..." onkeyup="filterStocks()">
+                    <select id="sortSelector" onchange="sortStocks()">
+                        <option value="name">依名稱排序</option>
+                        <option value="price">依價格排序</option>
+                        <option value="change">依漲跌排序</option>
+                        <option value="volume">依成交量排序</option>
+                    </select>
+                </div>
+                <div id="stockGrid" class="stock-grid">
+                    <p class="loading">載入中...</p>
+                </div>
+            </section>
+
+            <!-- 4. 預測分析分頁 -->
+            <section id="prediction" class="tab-content">
+                <h2>🔮 預測分析</h2>
+                <div class="prediction-selector">
+                    <label>選擇股票：</label>
+                    <select id="predictionSelector" onchange="showPrediction()">
+                        <option value="">-- 請選擇 --</option>
+                    </select>
+                </div>
+                <div id="predictionResult" class="prediction-result">
+                    <p class="info-text">選擇股票查看預測</p>
+                </div>
+            </section>
+
+            <!-- 5. 新聞要事分頁 -->
+            <section id="news" class="tab-content">
+                <h2>📰 新聞要事</h2>
+                <div id="newsList" class="news-list">
+                    <p class="loading">載入中...</p>
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <p>數據更新時間：<span id="updateTime">-</span></p>
+            <p>台股儀表板 v1.0</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
