@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <table border="1">
+        <thead><tr><th>代碼</th><th>價格</th><th>漲跌%</th></tr></thead>
+        <tbody id="body"></tbody>
+    </table>
+    <script>
+        function update() {
+            fetch('/api/data').then(r => r.json()).then(d => {
+                document.getElementById('body').innerHTML = d.map(s => 
+                    `<tr><td>${s.code}</td><td>${s.price}</td><td>${s.pct}%</td></tr>`).join('');
+            });
+        }
+        setInterval(update, 3000);
+        update();
+    </script>
+</body>
+</html>

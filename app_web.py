@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""台股預測儀表板 - Flask 後端 + 靜態前端"""
+"""
+台股預測儀表板 - 公網版本（用於 Zeabur 部署）
+集成了 API 和靜態資源提供
+"""
 
 from flask import Flask, render_template_string, send_file, request, jsonify
 from flask_cors import CORS
@@ -15,8 +18,7 @@ CORS(app)
 # ============ 數據加載 ============
 try:
     with open('stock_data.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        STOCKS = data.get('stocks', data) if isinstance(data, dict) else data
+        STOCKS = json.load(f)
 except:
     STOCKS = []
 
@@ -39,15 +41,17 @@ def get_prediction(code):
     """獲取股票預測數據（模擬）"""
     for stock in STOCKS:
         if stock['code'] == code:
+            # 模擬預測
             price = stock.get('current_price', 0)
             direction = random.choice(['📈 看漲', '📉 看跌'])
             confidence = random.randint(60, 95)
             
             return jsonify({
                 'code': code,
-                'direction': direction,
+                'name': stock.get('name', ''),
+                'prediction': direction,
                 'confidence': confidence,
-                'target_price': round(price * (1 + random.uniform(-0.1, 0.1)), 2),
+                'target_price': round(price * (1 + random.uniform(-0.05, 0.05)), 2),
                 'timestamp': datetime.now().isoformat()
             })
     return jsonify({'error': 'Stock not found'}), 404
@@ -58,10 +62,11 @@ def market_status():
     now = datetime.now()
     hour = now.hour
     
-    if 9 <= hour < 13.5:
+    # 判斷市場狀態
+    if 9 <= hour < 13.5:  # 09:00 - 13:30
         status = 'open'
         status_text = '盤中'
-    elif 13.5 <= hour < 15:
+    elif 13.5 <= hour < 15:  # 13:30 - 15:00
         status = 'open'
         status_text = '午盤'
     else:
@@ -79,46 +84,62 @@ def market_status():
         'timestamp': now.isoformat()
     })
 
-@app.route('/api/top-stocks', methods=['GET'])
-def get_top_stocks():
-    """獲取表現最好的股票"""
-    if not STOCKS:
-        return jsonify([])
-    
-    sorted_stocks = sorted(STOCKS, key=lambda x: x.get('day_change_pct', 0), reverse=True)
-    return jsonify(sorted_stocks[:5])
-
 # ============ 靜態資源 ============
 @app.route('/')
 def index():
-    """主頁 - 返回靜態 HTML"""
+    """主頁 - 提供完整儀表板 HTML"""
     try:
         with open('templates/index.html', 'r', encoding='utf-8') as f:
             return f.read()
     except:
         return '''
+        <!DOCTYPE html>
         <html>
-        <head><title>台股即時預測儀表板</title></head>
-        <body><h1>儀表板正在加載...</h1></body>
+        <head>
+            <title>台股預測儀表板</title>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Arial; text-align: center; margin-top: 50px; }
+                h1 { color: #7c3aed; }
+            </style>
+        </head>
+        <body>
+            <h1>台股即時預測儀表板</h1>
+            <p>正在加載...</p>
+            <p><a href="/api/all-stocks">查看 API</a></p>
+        </body>
         </html>
         '''
 
 @app.route('/static/<path:path>')
 def serve_static(path):
     """提供靜態文件"""
-    return send_file(os.path.join('static', path))
+    static_dir = 'static'
+    file_path = os.path.join(static_dir, path)
+    
+    if os.path.exists(file_path):
+        if path.endswith('.js'):
+            return send_file(file_path, mimetype='application/javascript')
+        elif path.endswith('.css'):
+            return send_file(file_path, mimetype='text/css')
+        elif path.endswith('.json'):
+            return send_file(file_path, mimetype='application/json')
+        else:
+            return send_file(file_path)
+    
+    return {'error': 'File not found'}, 404
 
-@app.route('/health', methods=['GET'])
+# ============ 健康檢查 ============
+@app.route('/health')
 def health():
-    """健康檢查"""
+    """健康檢查端點"""
     return jsonify({
         'status': 'ok',
-        'stocks_loaded': len(STOCKS),
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'stocks_loaded': len(STOCKS)
     })
 
 # ============ 啟動 ============
 if __name__ == '__main__':
-    print(f"✅ 加載 {len(STOCKS)} 支股票")
-    print("🚀 啟動 Flask 應用...")
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)

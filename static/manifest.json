@@ -1,0 +1,87 @@
+{
+  "name": "台股即時預測儀表板",
+  "short_name": "台股預測",
+  "description": "即時股票預測、技術分析和資金配置建議",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "lang": "zh-TW",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%237c3aed' width='192' height='192'/%3E%3Ctext x='96' y='120' font-size='80' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'%3E股%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect fill='%237c3aed' width='512' height='512'/%3E%3Ctext x='256' y='320' font-size='200' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'%3E股%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity"],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'%3E%3Crect fill='%237c3aed' width='540' height='720'/%3E%3Ctext x='270' y='360' font-size='60' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'%3E台股即時預測儀表板%3C/text%3E%3C/svg%3E",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "總覽",
+      "short_name": "總覽",
+      "description": "查看股票總覽",
+      "url": "/?tab=overview",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect fill='%237c3aed' width='96' height='96' rx='16'/%3E%3Ctext x='48' y='65' font-size='40' text-anchor='middle' fill='white'%3E📊%3C/text%3E%3C/svg%3E",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "股票細節",
+      "short_name": "細節",
+      "description": "查看股票詳細分析",
+      "url": "/?tab=analysis",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect fill='%237c3aed' width='96' height='96' rx='16'/%3E%3Ctext x='48' y='65' font-size='40' text-anchor='middle' fill='white'%3E📈%3C/text%3E%3C/svg%3E",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "買賣分析",
+      "short_name": "買賣",
+      "description": "買賣信號分析",
+      "url": "/?tab=analyzer",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect fill='%237c3aed' width='96' height='96' rx='16'/%3E%3Ctext x='48' y='65' font-size='40' text-anchor='middle' fill='white'%3E💹%3C/text%3E%3C/svg%3E",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
