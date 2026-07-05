@@ -18,9 +18,15 @@ CORS(app)
 # ============ 數據加載 ============
 try:
     with open('stock_data.json', 'r', encoding='utf-8') as f:
-        STOCKS = json.load(f)
+        data = json.load(f)
+        # 支援兩種格式: 直接陣列或 {"stocks": [...]}
+        STOCKS = data.get("stocks", data) if isinstance(data, dict) else data
 except:
     STOCKS = []
+
+# 移除不需要的股票代碼
+EXCLUDED_CODES = {'3045'}  # 奇力新
+STOCKS = [stock for stock in STOCKS if stock.get('code') not in EXCLUDED_CODES]
 
 # ============ API 端點 ============
 @app.route('/api/all-stocks', methods=['GET'])
