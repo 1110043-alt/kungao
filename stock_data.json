@@ -223,22 +223,6 @@
       "resistance": 165.0,
       "volatility": 1.5,
       "updated_at": "2026-07-03T10:30:00Z"
-    },
-    {
-      "code": "3045",
-      "name": "奇力新",
-      "current_price": 95.8,
-      "day_change_pct": 2.58,
-      "rsi": 68.9,
-      "ma5": 93.5,
-      "ma10": 94.2,
-      "ma20": 95.0,
-      "ma50": 92.5,
-      "ma200": 78.5,
-      "support": 80.0,
-      "resistance": 110.0,
-      "volatility": 2.85,
-      "updated_at": "2026-07-03T10:30:00Z"
     }
   ]
 }
